@@ -12,8 +12,108 @@ import {
   getTerminalUrlOrcaBrowserHint,
   getTerminalUrlSystemBrowserHint
 } from '../terminal-pane/terminal-link-open-hints'
-import type { ChecksPanelReview } from './checks-panel-review'
-import type { ChecksPanelHostedReviewModifierDestination } from './checks-panel-hosted-review-click-routing'
+import {
+  ConflictingFilesSection,
+  MergeConflictNotice,
+  ChecksList,
+  isMutablePRConversationComment,
+  PRCommentsList,
+  PRTriageStrip
+} from './checks-panel-content'
+import { ENTRY_REFRESH_GRACE_MS, shouldEntryRefresh } from './checks-entry-refresh'
+import type {
+  GitLabDiscussionResolveResult,
+  GitLabWorkItemDetails,
+  PRInfo,
+  PRCheckDetail,
+  PRCheckRunDetails,
+  PRComment
+} from '../../../../shared/types'
+import { getConnectionId } from '@/lib/connection-context'
+import {
+  buildResolvePullRequestConflictsPrompt,
+  pickDefaultSourceControlAgent
+} from './SourceControl'
+import {
+  buildFixBrokenChecksPrompt,
+  getBrokenChecks,
+  getCheckDetailsPromptKey
+} from '../pr-checks-fix-prompt'
+import {
+  buildPRCommentsResolutionPrompt,
+  isResolvablePRCommentGroup
+} from '../pr-comments-resolution-prompt'
+import { startFixChecksAgent } from '@/lib/fix-checks-agent-launch'
+import type {
+  HostedReviewCreationEligibility,
+  HostedReviewProvider
+} from '../../../../shared/hosted-review'
+import { resolveHostedReviewCreationProvider } from '../../../../shared/hosted-review-creation-providers'
+import { normalizeHostedReviewHeadRef } from '../../../../shared/hosted-review-refs'
+import { getHostedReviewCacheKey, refreshHostedReviewCard } from '@/store/slices/hosted-review'
+import { toast } from 'sonner'
+import { useConfirmationDialog } from '@/components/confirmation-dialog'
+import { type ChecksPanelReview, gitHubPRToChecksPanelReview } from './checks-panel-review'
+import { giteaPRChecksToPRChecks, giteaIssueCommentsToPRComments } from './checks-panel-gitea'
+import type { GiteaComment, GiteaPRCheck } from '../../../../shared/gitea-types'
+import {
+  checksPanelAsyncResultKey,
+  checksPanelHostedReviewAsyncResultKey,
+  shouldCommitChecksPanelAsyncResult
+} from './checks-panel-async-result-key'
+import {
+  markPRCommentThreadResolved,
+  restorePRCommentThreadSnapshot
+} from './pr-comment-thread-resolution'
+import { installWindowVisibilityTimeoutPoller } from '@/lib/window-visibility-timeout-poller'
+import {
+  getChecksPanelEmptyStateCopy,
+  shouldShowChecksPanelPublishBranchAction
+} from './checks-panel-empty-state'
+import {
+  getRuntimeGitScope,
+  getRuntimeGitStatus,
+  getRuntimeGitUpstreamStatus
+} from '@/runtime/runtime-git-client'
+import {
+  buildChecksPanelGitStatusContextKey,
+  readChecksPanelPublishActionGitStatus,
+  readChecksPanelGitStatusSnapshot,
+  shouldClearChecksPanelGitStatusSnapshot,
+  shouldCoalesceChecksPanelGitStatusSnapshotRefresh,
+  shouldCommitChecksPanelGitStatusSnapshot,
+  shouldPollChecksPanelRuntimeSshStatus,
+  type ChecksPanelGitStatusSnapshot
+} from './checks-panel-git-status-snapshot'
+import { installWindowVisibilityInterval } from '@/lib/window-visibility-interval'
+import { useMountedRef } from '@/hooks/useMountedRef'
+import { callRuntimeRpc, getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
+import { gitLabPipelineJobsToPRChecks } from '../../../../shared/gitlab-pipeline-checks'
+import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
+import { SourceControlAgentActionDialog } from './SourceControlAgentActionDialog'
+import { readSourceControlLaunchRecipeAgentId } from '@/lib/source-control-launch-agent-selection'
+import {
+  DEFAULT_SOURCE_CONTROL_AI_PR_CREATION_DEFAULTS,
+  resolveSourceControlActionRecipe,
+  resolveSourceControlAiForOperation,
+  resolveSourceControlAiPrCreationDefaults
+} from '../../../../shared/source-control-ai'
+import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
+import {
+  type SourceControlActionRecipe,
+  type SourceControlLaunchActionId
+} from '../../../../shared/source-control-ai-actions'
+import {
+  saveSourceControlActionRecipe,
+  type SourceControlAiWriteTarget
+} from '../../../../shared/source-control-ai-recipe-save'
+import { resolveSourceControlLaunchPlatform } from '@/lib/source-control-launch-platform'
+import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
+import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
+import { CreateHostedReviewComposer } from './CreateHostedReviewComposer'
+import { formatCreateError } from './create-pull-request-review-copy'
+import { stripBaseRef, useCreatePullRequestDialogFields } from './useCreatePullRequestDialogFields'
+import { localizedHostedReviewCopy } from '@/i18n/hosted-review-localized-copy'
 import { translate } from '@/i18n/i18n'
 import { PullRequestIcon, prStateColor } from './checks-panel/check-presentation'
 import { useChecksPanelControllerState } from './checks-panel/use-checks-panel-controller-state'
