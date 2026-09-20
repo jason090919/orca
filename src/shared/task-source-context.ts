@@ -101,6 +101,53 @@ export function normalizeTaskSourceContext(
   }
 }
 
+export function normalizeStoredTaskSourceContext(value: unknown): TaskSourceContext | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const raw = value as Record<string, unknown>
+  return normalizeTaskSourceContext({
+    provider: typeof raw.provider === 'string' ? raw.provider : '',
+    projectId: typeof raw.projectId === 'string' ? raw.projectId : '',
+    hostId: typeof raw.hostId === 'string' ? raw.hostId : null,
+    projectHostSetupId:
+      typeof raw.projectHostSetupId === 'string'
+        ? raw.projectHostSetupId
+        : (raw.projectHostSetupId ?? null),
+    repoId: typeof raw.repoId === 'string' ? raw.repoId : (raw.repoId ?? null),
+    providerIdentity:
+      raw.providerIdentity !== undefined && raw.providerIdentity !== null
+        ? (raw.providerIdentity as TaskProviderIdentity)
+        : null,
+    accountLabel:
+      typeof raw.accountLabel === 'string' ? raw.accountLabel : (raw.accountLabel ?? null)
+  })
+}
+
+export function areTaskSourceContextsEqual(
+  a: TaskSourceContext | null | undefined,
+  b: TaskSourceContext | null | undefined
+): boolean {
+  if (a === b) {
+    return true
+  }
+  if (!a || !b) {
+    return !a && !b
+  }
+  if (
+    a.kind !== b.kind ||
+    a.provider !== b.provider ||
+    a.projectId !== b.projectId ||
+    a.hostId !== b.hostId ||
+    a.projectHostSetupId !== b.projectHostSetupId ||
+    a.repoId !== b.repoId ||
+    a.accountLabel !== b.accountLabel
+  ) {
+    return false
+  }
+  return areTaskProviderIdentitiesEqual(a.providerIdentity, b.providerIdentity)
+}
+
 export function buildTaskSourceContextFromRepo(args: {
   provider: TaskProvider
   projectId: string
@@ -207,6 +254,33 @@ function normalizeTaskProviderIdentity(
     return null
   }
   return identity
+}
+
+function areTaskProviderIdentitiesEqual(
+  a: TaskProviderIdentity | null | undefined,
+  b: TaskProviderIdentity | null | undefined
+): boolean {
+  if (a === b) {
+    return true
+  }
+  if (!a || !b) {
+    return !a && !b
+  }
+  if (a.provider !== b.provider) {
+    return false
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const fields = TASK_PROVIDER_IDENTITY_FIELDS[a.provider]
+  return fields.every((field) => (left[field] ?? null) === (right[field] ?? null))
+}
+
+const TASK_PROVIDER_IDENTITY_FIELDS: Record<TaskProvider, readonly string[]> = {
+  github: ['owner', 'repo', 'host'],
+  gitlab: ['projectId', 'namespace', 'project', 'webUrl'],
+  linear: ['workspaceId', 'workspaceName', 'teamId', 'teamKey'],
+  jira: ['siteId', 'siteUrl', 'projectKey'],
+  gitea: ['serverId', 'baseUrl', 'owner', 'repo']
 }
 
 function normalizeNonEmptyString(value: string | null | undefined): string | null {
